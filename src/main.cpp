@@ -80,6 +80,7 @@ std::vector<Game> processPGNFile(const std::string& filePath, bool discardLast) 
                 if (!currentGame.moves.empty() && inMovesSection && isValidGame(currentGame)) {
                     games.push_back(currentGame);
                     currentGame = Game();
+                    std::cout << "\rProcessed " << games.size() << " games." << std::flush;
                 }
                 inMovesSection = false;
             }
@@ -167,7 +168,8 @@ void encodeAndWriteGames(const std::vector<Game>& games, const std::string& outF
         outFile << gameEncoding.str() << "\n";
     }
 
-    std::cout << "Processed " << games.size() << " games.\n";
+    std::cout << "\rProcessed " << games.size() << " games.\n";
+    std::cout << "Wrote output to " << outFileName << ".\n";
     outFile.close();
 }
 
@@ -196,7 +198,5 @@ int main(int argc, char* argv[]) {
     auto games = processPGNFile(filePath, discardLast);
 
     encodeAndWriteGames(games, outFileName);
-
-    std::cout << "Processed " << games.size() << " games and output to " << outFileName << ".\n";
     return 0;
 }
