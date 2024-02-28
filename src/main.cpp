@@ -157,12 +157,14 @@ std::vector<Game> processPGNFile(const std::string &filePath, bool discardLast) 
     return games;
 }
 
-void encodeAndAppendInputPlanes(const lczero::InputPlanes &planes, std::ostringstream &stream) {
+void encodeAndAppendInputPlanes(const lczero::InputPlanes &planes, std::string &masks, std::string &values) {
     for (auto it = planes.begin(); it != planes.end(); ++it) {
         const auto &plane = *it;
-        stream << plane.mask << '|' << std::to_string(plane.value);
+        masks += std::to_string(plane.mask);
+        values += std::to_string(plane.value);
         if (std::next(it) != planes.end()) {
-            stream << '|';
+            values += ",";
+            masks += ",";
         }
     }
 }
@@ -181,18 +183,17 @@ void encodeAndWriteGames(const std::vector<Game> &games, const std::string &outF
         board.SetFromFen(lczero::ChessBoard::kStartposFen);
         history.Reset(board, 0, 1);
 
-        std::ostringstream gameEncoding;
-        gameEncoding << game.whiteElo + "," + game.blackElo + "|";
-        std::string gameString;
+        std::string eloEncoding = game.whiteElo + "," + game.blackElo;
+        std::string planeMasksEncoding, planeValuesEncoding;
 
-        bool isFirstPosition = true;
         bool skipGame = false;
+        bool isFirstGame = true;
         for (const auto &moveStr: game.moves) {
-            if (!isFirstPosition) {
-                gameEncoding << "|";
+            if (!isFirstGame) {
+                planeMasksEncoding += ",";
+                planeValuesEncoding += ",";
             }
-            isFirstPosition = false;
-            gameString += moveStr + " ";
+            isFirstGame = false;
             try {
                 lczero::Move move = lczero::SanToMove(moveStr, history.Last().GetBoard());
                 history.Append(move);
@@ -207,10 +208,10 @@ void encodeAndWriteGames(const std::vector<Game> &games, const std::string &outF
                     lczero::FillEmptyHistory::ALWAYS, nullptr
             );
 
-            encodeAndAppendInputPlanes(planes, gameEncoding);
+            encodeAndAppendInputPlanes(planes, planeMasksEncoding, planeValuesEncoding);
         }
         if (!skipGame) {
-            outFile << gameEncoding.str() << "\n";
+            outFile << eloEncoding << "|" << planeMasksEncoding << "|" << planeValuesEncoding << "\n";
         }
         gamesProcessed++;
         if (gamesProcessed % 250 == 0) {
