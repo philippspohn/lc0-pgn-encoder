@@ -1,2 +1,4 @@
 cmake-build-debug
+cmake_build-release
 .idea
+database.pgn

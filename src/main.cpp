@@ -21,15 +21,15 @@ void printHelp() {
               << "  --discard-last        Optionally discard the last game in the file\n";
 }
 
-bool isValidElo(const std::string& elo) {
+bool isValidElo(const std::string &elo) {
     return !elo.empty();
 }
 
-bool isValidGame(const Game& game) {
+bool isValidGame(const Game &game) {
     return isValidElo(game.whiteElo) && isValidElo(game.blackElo) && game.moves.size() >= 10;
 }
 
-std::string trim(const std::string& str) {
+std::string trim(const std::string &str) {
     auto start = str.begin();
     while (start != str.end() && std::isspace(*start)) {
         start++;
@@ -42,7 +42,7 @@ std::string trim(const std::string& str) {
     return {start, end + 1};
 }
 
-std::vector<Game> processPGNFile(const std::string& filePath, bool discardLast) {
+std::vector<Game> processPGNFile(const std::string &filePath, bool discardLast) {
     std::ifstream file(filePath);
     if (!file.is_open()) {
         std::cerr << "Failed to open file: " << filePath << '\n';
@@ -50,12 +50,14 @@ std::vector<Game> processPGNFile(const std::string& filePath, bool discardLast) 
     }
 
     std::vector<Game> games;
-    std::string line;
+    std::size_t skippedGames = 0;
+    std::string line, processedLine;
     Game currentGame;
-    bool inMovesSection = false, isEmptyLine = false;
+    bool inMovesSection = false, isEmptyLine = false, inComment = false;
     std::size_t sectionCount = 0, maxSections = std::numeric_limits<std::size_t>::max();
 
     if (discardLast) {
+        skippedGames++;
         while (std::getline(file, line)) {
             if (line.empty() && !isEmptyLine) {
                 ++sectionCount;
@@ -71,15 +73,36 @@ std::vector<Game> processPGNFile(const std::string& filePath, bool discardLast) 
         isEmptyLine = false;
     }
 
-    std::regex moveRegex(R"(\d+\.\s*(\S+))"), resultRegex(R"(^1-0$|^0-1$|^1/2-1/2$)");
+    std::string results[] = {"1-0", "0-1", "1/2-1/2"};
     while (std::getline(file, line) && sectionCount < maxSections) {
-        line = trim(line);
-        if (line.empty()) {
+        processedLine = "";
+        for (char ch: line) {
+            if (!inComment && ch == '{') {
+                inComment = true;
+                continue;
+            }
+            if (inComment && ch == '}') {
+                inComment = false;
+                continue;
+            }
+            if (!inComment) {
+                processedLine += ch;
+            }
+        }
+
+        processedLine = trim(processedLine);
+        if (trim(line).empty()) {
             if (!isEmptyLine) {
                 ++sectionCount;
-                if (!currentGame.moves.empty() && inMovesSection && isValidGame(currentGame)) {
-                    games.push_back(currentGame);
+                if (!currentGame.moves.empty() && inMovesSection) {
+                    if(isValidGame(currentGame)) {
+                        games.push_back(currentGame);
+                    } else {
+                        skippedGames++;
+                    }
                     currentGame = Game();
+                    if (games.size() % 500 == 0)
+                        std::cout << "\rLoaded " << games.size() << " games." << std::flush;
                 }
                 inMovesSection = false;
             }
@@ -89,8 +112,8 @@ std::vector<Game> processPGNFile(const std::string& filePath, bool discardLast) 
             isEmptyLine = false;
         }
 
-        if (line[0] == '[') {
-            std::istringstream iss(line);
+        if (processedLine[0] == '[') {
+            std::istringstream iss(processedLine);
             std::string tag, value;
             iss >> tag;
             std::getline(iss, value, '\"');
@@ -99,16 +122,26 @@ std::vector<Game> processPGNFile(const std::string& filePath, bool discardLast) 
             else if (tag == "[BlackElo") currentGame.blackElo = value;
         } else {
             inMovesSection = true;
-            std::istringstream iss(line);
+            std::istringstream iss(processedLine);
             std::string token;
             while (iss >> token) {
-                if (std::regex_match(token, resultRegex)) {
-                    break;
+                // Check for game result
+                bool isResult = false;
+                for (const auto &result: results) {
+                    if (token == result) {
+                        isResult = true;
+                        break;
+                    }
                 }
-                std::smatch matches;
-                if (std::regex_search(token, matches, moveRegex) && matches.size() > 1) {
-                    currentGame.moves.push_back(matches[1].str());
-                } else if (token.find('.') == std::string::npos) {
+                if (isResult) break;
+
+                // Check move
+                size_t dotPos = token.find('.');
+                if (dotPos != std::string::npos) {
+                    size_t startPos = (token.find("...") != std::string::npos) ? dotPos + 3 : dotPos + 1;
+                    std::string move = token.substr(startPos);
+                    if (!move.empty()) currentGame.moves.push_back(move);
+                } else {
                     currentGame.moves.push_back(token);
                 }
             }
@@ -119,43 +152,55 @@ std::vector<Game> processPGNFile(const std::string& filePath, bool discardLast) 
         games.push_back(currentGame);
     }
 
+    std::cout << "\rCompleted - Loaded " << games.size() << "/" << games.size() + skippedGames << " games.\n";
+
     return games;
 }
-void encodeAndAppendInputPlanes(const lczero::InputPlanes& planes, std::ostringstream& stream) {
+
+void encodeAndAppendInputPlanes(const lczero::InputPlanes &planes, std::string &stream) {
     for (auto it = planes.begin(); it != planes.end(); ++it) {
-        const auto& plane = *it;
-        stream << plane.mask << ',' << plane.value;
+        const auto &plane = *it;
+        stream += plane.mask + ',' + plane.value;
         if (std::next(it) != planes.end()) {
-            stream << ';';
+            stream += ';';
         }
     }
 }
 
-void encodeAndWriteGames(const std::vector<Game>& games, const std::string& outFileName) {
+void encodeAndWriteGames(const std::vector<Game> &games, const std::string &outFileName) {
     std::ofstream outFile(outFileName);
     if (!outFile.is_open()) {
         std::cerr << "Failed to open file for writing.\n";
         return;
     }
 
-    for (const auto& game : games) {
+    size_t gamesProcessed = 0;
+    for (const auto &game: games) {
         lczero::ChessBoard board;
         lczero::PositionHistory history;
         board.SetFromFen(lczero::ChessBoard::kStartposFen);
         history.Reset(board, 0, 1);
 
-        std::ostringstream gameEncoding;
-        gameEncoding << game.whiteElo << "," << game.blackElo << "|";
+        std::string gameEncoding;
+        gameEncoding += game.whiteElo + "," + game.blackElo + "|";
+        std::string gameString;
 
         bool isFirstPosition = true;
-        for (const auto& moveStr : game.moves) {
+        bool skipGame = false;
+        for (const auto &moveStr: game.moves) {
             if (!isFirstPosition) {
-                gameEncoding << "|";
+                gameEncoding += "|";
             }
             isFirstPosition = false;
-
-            lczero::Move move = lczero::SanToMove(moveStr, history.Last().GetBoard());
-            history.Append(move);
+            gameString += moveStr + " ";
+            try {
+                lczero::Move move = lczero::SanToMove(moveStr, history.Last().GetBoard());
+                history.Append(move);
+            } catch (...) {
+                std::cerr << "Illegal move (" << moveStr << "), skipping game!\n";
+                skipGame = true;
+                break;
+            }
 
             lczero::InputPlanes planes = lczero::EncodePositionForNN(
                     pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE, history, 8,
@@ -164,14 +209,21 @@ void encodeAndWriteGames(const std::vector<Game>& games, const std::string& outF
 
             encodeAndAppendInputPlanes(planes, gameEncoding);
         }
-        outFile << gameEncoding.str() << "\n";
+        if (!skipGame) {
+            outFile << gameEncoding << "\n";
+        }
+        gamesProcessed++;
+        if (gamesProcessed % 250 == 0) {
+            std::cout << "\rProcessed " << gamesProcessed << "/" << games.size() << " games." << std::flush;
+        }
     }
 
-    std::cout << "Processed " << games.size() << " games.\n";
+    std::cout << "\rProcessed " << games.size() << " games.\n";
+    std::cout << "Wrote output to " << outFileName << ".\n";
     outFile.close();
 }
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
     if (argc < 2 || std::string(argv[1]) == "-h" || std::string(argv[1]) == "--help") {
         printHelp();
         return 1;
@@ -193,10 +245,10 @@ int main(int argc, char* argv[]) {
 
     lczero::InitializeMagicBitboards();
 
+    std::cout << "Reading PGN file...\n";
     auto games = processPGNFile(filePath, discardLast);
 
+    std::cout << "Generating and writing input planes...\n";
     encodeAndWriteGames(games, outFileName);
-
-    std::cout << "Processed " << games.size() << " games and output to " << outFileName << ".\n";
     return 0;
 }
