@@ -160,9 +160,9 @@ std::vector<Game> processPGNFile(const std::string &filePath, bool discardLast) 
 void encodeAndAppendInputPlanes(const lczero::InputPlanes &planes, std::ostringstream &stream) {
     for (auto it = planes.begin(); it != planes.end(); ++it) {
         const auto &plane = *it;
-        stream << plane.mask << ',' << std::to_string(plane.value);
+        stream << plane.mask << '|' << std::to_string(plane.value);
         if (std::next(it) != planes.end()) {
-            stream << ';';
+            stream << '|';
         }
     }
 }
