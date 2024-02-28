@@ -95,7 +95,7 @@ std::vector<Game> processPGNFile(const std::string &filePath, bool discardLast) 
             if (!isEmptyLine) {
                 ++sectionCount;
                 if (!currentGame.moves.empty() && inMovesSection) {
-                    if(isValidGame(currentGame)) {
+                    if (isValidGame(currentGame)) {
                         games.push_back(currentGame);
                     } else {
                         skippedGames++;
@@ -157,12 +157,12 @@ std::vector<Game> processPGNFile(const std::string &filePath, bool discardLast) 
     return games;
 }
 
-void encodeAndAppendInputPlanes(const lczero::InputPlanes &planes, std::string &stream) {
+void encodeAndAppendInputPlanes(const lczero::InputPlanes &planes, std::ostringstream &stream) {
     for (auto it = planes.begin(); it != planes.end(); ++it) {
         const auto &plane = *it;
-        stream += plane.mask + ',' + plane.value;
+        stream << plane.mask << ',' << std::to_string(plane.value);
         if (std::next(it) != planes.end()) {
-            stream += ';';
+            stream << ';';
         }
     }
 }
@@ -181,15 +181,15 @@ void encodeAndWriteGames(const std::vector<Game> &games, const std::string &outF
         board.SetFromFen(lczero::ChessBoard::kStartposFen);
         history.Reset(board, 0, 1);
 
-        std::string gameEncoding;
-        gameEncoding += game.whiteElo + "," + game.blackElo + "|";
+        std::ostringstream gameEncoding;
+        gameEncoding << game.whiteElo + "," + game.blackElo + "|";
         std::string gameString;
 
         bool isFirstPosition = true;
         bool skipGame = false;
         for (const auto &moveStr: game.moves) {
             if (!isFirstPosition) {
-                gameEncoding += "|";
+                gameEncoding << "|";
             }
             isFirstPosition = false;
             gameString += moveStr + " ";
@@ -210,7 +210,7 @@ void encodeAndWriteGames(const std::vector<Game> &games, const std::string &outF
             encodeAndAppendInputPlanes(planes, gameEncoding);
         }
         if (!skipGame) {
-            outFile << gameEncoding << "\n";
+            outFile << gameEncoding.str() << "\n";
         }
         gamesProcessed++;
         if (gamesProcessed % 250 == 0) {
